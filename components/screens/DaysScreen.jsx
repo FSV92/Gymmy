@@ -1,23 +1,18 @@
-import { View, Text, TouchableOpacity, ScrollView } from "react-native";
+import { View, Text, TouchableOpacity, ScrollView, Platform, UIManager, LayoutAnimation } from "react-native";
 import React, { useEffect, useState } from "react";
 import { observer } from "mobx-react-lite";
 
 import DaysStore from "../../stores/DaysStore";
-import DatabaseStore from "../../stores/DatabaseStore";
-import Day from "../widgets/Day";
+import WorkoutStore from "../../stores/WorkoutStore";
+import DayCard from "../widgets/DayCard";
+import BottomSheetComponent from "../widgets/BottomSheetComponent";
 
 const DaysScreen = observer(() => {
-  // const [days, setDays] = useState([]);
-
   useEffect(() => {
     (async () => {
-      await DaysStore.getFromSQL();
+      await DaysStore.getDaysFromSQL();
     })();
   }, []);
-
-  // useEffect(() => {
-  //    console.log("use");
-  // }, [DaysStore.days]);
 
   return (
     <View style={{ flex: 1, backgroundColor: "white", paddingVertical: 20 }}>
@@ -29,7 +24,7 @@ const DaysScreen = observer(() => {
               .slice()
               .reverse()
               .map((day) => {
-                return <Day key={day.id} day={day} />;
+                return <DayCard key={day.id} day={day} />;
               })}
           </ScrollView>
         ) : (
@@ -58,7 +53,7 @@ const DaysScreen = observer(() => {
       </TouchableOpacity>
 
       <TouchableOpacity
-        onPress={DaysStore.deleteAll}
+        onPress={DaysStore.deleteAllDays}
         style={{
           // position: "absolute",
           bottom: 0,
@@ -75,6 +70,8 @@ const DaysScreen = observer(() => {
         }}>
         <Text style={{ color: "white" }}>Удалить все тренировки</Text>
       </TouchableOpacity>
+
+      <BottomSheetComponent />
     </View>
   );
 });

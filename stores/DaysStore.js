@@ -1,26 +1,77 @@
 import { observable, action, computed, runInAction, makeObservable, makeAutoObservable } from "mobx";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import DatabaseStore from "./DatabaseStore";
 
-class DaysStore {
-  @observable days = [];
-  @observable currentDay = {};
+class DayModel {
+  @observable id;
+  @observable date;
 
+  constructor(props) {
+    makeAutoObservable(this);
+    this.id = props.id;
+    this.date = props.date;
+  }
+}
+
+class DaysStore {
   constructor() {
     makeAutoObservable(this);
   }
 
-  setDays = (days) => {
-    this.days = days;
-
-    //   console.log(this.days);
-
-    this.saveToMemory();
-  };
+  @observable days = [];
+  @observable currentDay = "";
 
   DAYS_WEEK = ["Воскресенье", "Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота"];
 
-  getStringTime = () => {
+  @action
+  getDaysFromSQL = async () => {
+    await DatabaseStore.openDatabase();
+    await DatabaseStore.createDatabase("days", [
+      { col: "id", type: "INTEGER PRIMARY KEY" },
+      { col: "date", type: "TEXT" },
+    ]);
+
+    const receivedDays = await DatabaseStore.getTable("days");
+    receivedDays && this.setDays(receivedDays);
+  };
+
+  @action
+  resetDays = () => {
+    this.days = [];
+  };
+
+  _createDayObj = (day) => {
+    return new DayModel(day);
+  };
+  _createDaysSection = (days) => {
+    return days.map((day) => {
+      return this._createDayObj(day);
+    });
+  };
+
+  @action
+  setDays = (days) => {
+    this.days = this._createDaysSection(days);
+  };
+
+  @action
+  deleteAllDays = () => {
+    (async () => {
+      await DatabaseStore.dropTable("days");
+      await DatabaseStore.dropTable("workouts");
+      await DatabaseStore.dropTable("repetitions");
+    })()
+      .then(async () => {
+        this.resetDays();
+        console.log("Все таблицы успешно очищены.");
+      })
+      .catch((error) => {
+        console.error("Произошла ошибка:", error);
+      });
+    // this.getDaysFromSQL();
+  };
+
+  @action
+  _getStringTime = () => {
     const date = new Date();
     const currTime = date.getDate() < 10 ? `0${date.getDate()}` : date.getDate();
     const currMonth = date.getMonth() < 10 ? `0${date.getMonth()}` : date.getMonth();
@@ -33,79 +84,47 @@ class DaysStore {
     return stringTime;
   };
 
-  addDay = () => {
-    const indexLastDay = this.days.length - 1;
-
-    //  const newDay = {
-    //    id: this.days[indexLastDay] ? this.days[indexLastDay].id + 1 : 0,
-    //    date: this.getStringTime(),
-    //    // exercises: []
-    //  };
-    const newDate = this.getStringTime();
-
-    DatabaseStore.insertToTable(newDate);
-    this.getFromSQL();
-  };
-
-  delDay = (id) => {
-    DatabaseStore.deleteRow(id);
-    this.getFromSQL();
-
-    //  const filteredDays = this.days.filter((day) => day.id !== id);
-    //  this.setDays(filteredDays);
-
-    //  this.saveToMemory();
-  };
-
-  setExercise = (day) => {
-    const indexLastExercise = day.exercises.length - 1;
-
-    const newExercise = {
-      id: `${day.exercises[indexLastExercise] ? Number(day.exercises[indexLastExercise].id) + 1 : 0}`,
-      name: "",
-      description: "",
-      approaches: [{ weight: "", count: "" }],
-    };
-
-    const foundDay = this.days.find((elDay) => elDay.id === day.id);
-    runInAction(() => this.days.find((elDay) => elDay.id === day.id).exercises.push(newExercise));
-
-    //   console.log("foundDay.exercises", foundDay.exercises);
-    //   console.log("this.days", this.days);
-
-    this.saveToMemory();
-  };
-
-  saveToMemory = () => {
-    AsyncStorage.setItem("@DAYS", JSON.stringify(this.days));
-  };
-
-  getFromMemory = async () => {
-    //   await AsyncStorage.removeItem("@DAYS");
-    const receivedDays = await AsyncStorage.getItem("@DAYS").then((json) => JSON.parse(json));
-
-    receivedDays && this.setDays(receivedDays);
-  };
-
-  getFromSQL = async () => {
+  @action
+  addDay = async () => {
     await DatabaseStore.openDatabase();
-    await DatabaseStore.createDatabase();
-    //  await DatabaseStore.readTable();
+    await DatabaseStore.createDatabase("days", [
+      { col: "id", type: "INTEGER PRIMARY KEY" },
+      { col: "date", type: "TEXT" },
+    ]);
 
-    await DatabaseStore.readTable();
+    const newDate = this._getStringTime();
 
-    const receivedDays = await DatabaseStore.getTable();
-    receivedDays && this.setDays(receivedDays);
+    let currentID;
+    if (this.days.length > 0) {
+      const lastIndex = this.days.length - 1;
+      currentID = this.days[lastIndex].id + 1;
+    } else {
+      currentID = 0;
+    }
 
-    //  console.log("receivedDays", DatabaseStore.daysTable);
+    const result = await DatabaseStore.insertToTable("days", ["id", "date"], [currentID, newDate]);
+    console.log("result", result.rowsAffected);
 
-    //  const receivedDays = AsyncStorage.getItem("@DAYS").then((json) => JSON.parse(json));
-    //  receivedDays && this.setDays(receivedDays);
+    if (result.rowsAffected > 0) {
+      runInAction(() => this.days.push({ id: currentID, date: newDate }));
+    }
+    // await this.getDaysFromSQL();
   };
 
-  deleteAll = () => {
-    DatabaseStore.clearTable();
-    this.getFromSQL();
+  @action
+  delDay = async (id) => {
+    const result = await DatabaseStore.deleteRow("days", id);
+
+    if (result.rowsAffected > 0) {
+      const foundDayIndex = this.days.findIndex((day) => day.id == id);
+      runInAction(() => this.days.splice(foundDayIndex, 1));
+    }
+    // this.getDaysFromSQL();
+  };
+
+  @action
+  setCurrentDay = (day) => {
+    this.currentDay = this._createDayObj(day);
   };
 }
 
